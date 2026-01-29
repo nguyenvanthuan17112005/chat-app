@@ -1,105 +1,127 @@
 import socket
 import threading
 import sys
+import tkinter as tk
+from tkinter import scrolledtext, messagebox
 
-# ================== CẤU HÌNH SERVER ==================
-HOST = '127.0.0.1'   # Địa chỉ server (localhost)
-PORT = 4321          # Cổng server
+# ================== UI CONFIG ==================
+DARK_GREY = '#121212'
+MEDIUM_GREY = '#1F1B24'
+OCEAN_BLUE = "#464E88"
+WHITE = "white"
 
+FONT = ("Helvetica", 17)
+SMALL_FONT = ("Helvetica", 13)
+BUTTON_FONT = ("Helvetica", 15)
 
-def listen_for_msg_from_server(client):
-    """
-    Luồng này CHỈ để lắng nghe tin nhắn từ server
-    """
+# ================== SERVER CONFIG ==================
+HOST = '127.0.0.1'
+PORT = 4321
+
+# ================== SOCKET ==================
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+# ================== FUNCTIONS ==================
+def add_message(message):
+    message_box.config(state=tk.NORMAL)
+    message_box.insert(tk.END, message + "\n")
+    message_box.config(state=tk.DISABLED)
+
+def connect():
+    username = username_textbox.get()
+
+    if username == "":
+        messagebox.showerror("Invalid username", "Không được để trống username")
+        return
+
+    try:
+        client.connect((HOST, PORT))
+        client.sendall(username.encode())
+        add_message("[SERVER] Connected successfully")
+
+        threading.Thread(
+            target=listen_for_msg_from_server,
+            daemon=True
+        ).start()
+
+    except:
+        messagebox.showerror("Connection error", "Không thể kết nối server")
+
+def send_message():
+    message = message_textbox.get()
+
+    if message == "":
+        messagebox.showerror("Empty message", "Message cannot be empty")
+        return
+
+    client.sendall(message.encode())
+    message_textbox.delete(0, tk.END)
+
+def listen_for_msg_from_server():
     while True:
         try:
-            # Nhận dữ liệu từ server (tối đa 2048 bytes)
             message = client.recv(2048).decode('utf-8')
-
-            # Nếu không nhận được dữ liệu → mất kết nối
             if not message:
-                print("⚠️ Mất kết nối tới server")
                 break
 
-            # Tin nhắn có định dạng: username~nội_dung
             if "~" in message:
                 username, content = message.split("~", 1)
-                print(f"[{username}] {content}")
+                add_message(f"[{username}] {content}")
             else:
-                print(message)
+                add_message(message)
 
         except:
-            print("❌ Lỗi khi nhận tin nhắn từ server")
             break
 
-    # Đóng socket khi thoát vòng lặp
     client.close()
     sys.exit(0)
 
+# ================== UI ==================
+root = tk.Tk()
+root.geometry("600x600")
+root.title("Chat Client")
+root.resizable(False, False)
 
-def send_message_to_server(client):
-    """
-    Luồng chính: gửi tin nhắn người dùng nhập lên server
-    """
-    while True:
-        try:
-            # 👉 Người dùng nhập nội dung chat
-            message = input("💬 Nhập tin nhắn: ")
+top_frame = tk.Frame(root, bg=DARK_GREY, height=100)
+top_frame.pack(fill=tk.X)
 
-            if message:
-                # Gửi tin nhắn lên server
-                client.sendall(message.encode())
-            else:
-                print("⚠️ Tin nhắn không được để trống")
+middle_frame = tk.Frame(root, bg=MEDIUM_GREY)
+middle_frame.pack(fill=tk.BOTH, expand=True)
 
-        except KeyboardInterrupt:
-            # Người dùng nhấn Ctrl + C
-            print("\n👋 Thoát khỏi phòng chat...")
-            client.close()
-            sys.exit(0)
+bottom_frame = tk.Frame(root, bg=DARK_GREY, height=100)
+bottom_frame.pack(fill=tk.X)
 
+username_label = tk.Label(top_frame, text="Username:", font=FONT, bg=DARK_GREY, fg=WHITE)
+username_label.pack(side=tk.LEFT, padx=10)
 
-def communicate_to_server(client):
-    """
-    Xử lý đăng nhập + khởi tạo luồng nghe tin nhắn
-    """
-    # 👉 Người dùng nhập tên
-    username = input("👤 Nhập tên người dùng: ").strip()
+username_textbox = tk.Entry(top_frame, font=FONT, bg=MEDIUM_GREY, fg=WHITE)
+username_textbox.pack(side=tk.LEFT)
 
-    if not username:
-        print("❌ Tên người dùng không được để trống")
-        client.close()
-        sys.exit(1)
+username_button = tk.Button(
+    top_frame, text="Join",
+    font=BUTTON_FONT, bg=OCEAN_BLUE, fg=WHITE,
+    command=connect
+)
+username_button.pack(side=tk.LEFT, padx=10)
 
-    # Gửi username lên server
-    client.sendall(username.encode())
+message_box = scrolledtext.ScrolledText(
+    middle_frame, font=SMALL_FONT,
+    bg=MEDIUM_GREY, fg=WHITE
+)
+message_box.config(state=tk.DISABLED)
+message_box.pack(fill=tk.BOTH, expand=True)
 
-    # Tạo thread để nghe tin nhắn từ server
-    threading.Thread(
-        target=listen_for_msg_from_server,
-        args=(client,),
-        daemon=True
-    ).start()
+message_textbox = tk.Entry(
+    bottom_frame, font=FONT,
+    bg=MEDIUM_GREY, fg=WHITE
+)
+message_textbox.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
 
-    # Gửi tin nhắn
-    send_message_to_server(client)
+message_button = tk.Button(
+    bottom_frame, text="Send",
+    font=BUTTON_FONT, bg=OCEAN_BLUE, fg=WHITE,
+    command=send_message
+)
+message_button.pack(side=tk.LEFT, padx=10)
 
-
-def main():
-    # Tạo socket TCP
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    try:
-        # Kết nối tới server
-        client.connect((HOST, PORT))
-        print("✅ Đã kết nối tới server chat")
-    except:
-        print(f"❌ Không thể kết nối tới server {HOST}:{PORT}")
-        sys.exit(1)
-
-    communicate_to_server(client)
-
-
-# Điểm bắt đầu chương trình
-if __name__ == "__main__":
-    main()
+root.mainloop()
